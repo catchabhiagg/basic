@@ -1,0 +1,136 @@
+trigger:
+- main
+
+stages:
+
+# -----------------------------
+# STAGE 1: VALIDATE + PLAN
+# -----------------------------
+- stage: Validate_and_Plan
+  displayName: "Validate & Plan"
+
+  jobs:
+  - job: Validate
+    pool:
+      name: basic   # self-hosted agent pool
+
+    steps:
+    - checkout: self
+
+    # 🔹 Install Tools (Windows)
+    - powershell: |
+        choco install terraform -y
+        choco install python -y
+        pip install checkov
+        choco install tflint -y
+        choco install wget -y
+
+        # tfsec
+        Invoke-WebRequest -Uri "https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-windows-amd64.exe" -OutFile "C:\Windows\System32\tfsec.exe"
+
+        # Trufflehog
+        Invoke-WebRequest https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_windows_amd64.exe -OutFile trufflehog.exe
+        Move-Item trufflehog.exe C:\Windows\System32\trufflehog.exe
+      displayName: "Install Tools"
+
+    # 🔹 Azure Login
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'basic-appreg'
+        scriptType: ps
+        scriptLocation: inlineScript
+        inlineScript: |
+          az account show
+
+    # 🔹 Terraform Init
+    - script: |
+        terraform init `
+        -backend-config="resource_group_name=rg-infra" `
+        -backend-config="storage_account_name=infrastoragetfstate" `
+        -backend-config="container_name=statefile" `
+        -backend-config="key=infra/dev/terraform.tfstate"
+      displayName: "Terraform Init"
+
+    # 🔹 Lint
+    - script: tflint
+      displayName: "TFLint"
+
+    # 🔹 Security
+    - script: tfsec .
+      displayName: "tfsec"
+
+    - script: checkov -d .
+      displayName: "Checkov"
+
+    # 🔹 Secrets
+    - script: trufflehog git file://. --only-verified
+      displayName: "Trufflehog"
+
+    # 🔹 Plan
+    - script: terraform plan -out=tfplan
+      displayName: "Terraform Plan"
+
+    # 🔹 Publish Plan
+    - publish: tfplan
+      artifact: tfplan
+
+
+# -----------------------------
+# STAGE 2: APPROVAL
+# -----------------------------
+- stage: Approval
+  displayName: "Manual Approval"
+  dependsOn: Validate_and_Plan
+
+  jobs:
+  - job: WaitForApproval
+    pool: server
+
+    steps:
+    - task: ManualValidation@0
+      inputs:
+        notifyUsers: 'abhishekaggarwal.devops@gmail.com'
+        instructions: 'Approve Terraform Apply'
+        onTimeout: 'reject'
+
+
+# -----------------------------
+# STAGE 3: APPLY
+# -----------------------------
+- stage: Apply
+  displayName: "Terraform Apply"
+  dependsOn: Approval
+
+  jobs:
+  - job: ApplyJob
+    pool:
+      name: basic
+
+    steps:
+    - checkout: self
+
+    # 🔹 Azure Login
+    - task: AzureCLI@2
+      inputs:
+        azureSubscription: 'basic-appreg'
+        scriptType: ps
+        scriptLocation: inlineScript
+        inlineScript: |
+          az account show
+
+    # 🔹 Terraform Init
+    - script: |
+        terraform init `
+        -backend-config="resource_group_name=rg-infra" `
+        -backend-config="storage_account_name=infrastoragetfstate" `
+        -backend-config="container_name=statefile" `
+        -backend-config="key=infra/dev/terraform.tfstate"
+      displayName: "Terraform Init"
+
+    # 🔹 Download Plan
+    - download: current
+      artifact: tfplan
+
+    # 🔹 Apply
+    - script: terraform apply -auto-approve "$(Pipeline.Workspace)\tfplan\tfplan"
+      displayName: "Terraform Apply"
