@@ -69,8 +69,8 @@ resource "azurerm_network_interface" "nic" {
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = "my-vm"
   resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  size                = "Standard_B1s"
+   location            = "southafricanorth"
+   size                = "Standard_D2ls_v5"
   admin_username      = "azureuser"
 
   network_interface_ids = [
