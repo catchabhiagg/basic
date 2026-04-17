@@ -1,109 +1,49 @@
 trigger:
 - main
 
-stages:
+pool:
+  name: basic   # tera self-hosted agent
 
-# -----------------------------
-# STAGE 1: INIT + FMT + PLAN
-# -----------------------------
-- stage: Plan
+steps:
+- checkout: self
+
+# 🔹 Install Terraform (Windows safe)
+- powershell: |
+    Write-Host "Installing Terraform..."
+
+    $url = "https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_windows_amd64.zip"
+    $output = "terraform.zip"
+
+    Invoke-WebRequest -Uri $url -OutFile $output
+    Expand-Archive -Path $output -DestinationPath "C:\terraform" -Force
+
+    $env:PATH += ";C:\terraform"
+
+    Write-Host "Terraform installed"
+    terraform -v
+  displayName: "Install Terraform"
+
+# 🔹 Azure Login
+- task: AzureCLI@2
+  inputs:
+    azureSubscription: 'basic-appreg'
+    scriptType: ps
+    scriptLocation: inlineScript
+    inlineScript: |
+      az account show
+
+# 🔹 Terraform Init (backend ON)
+- script: terraform init -backend-config="resource_group_name=rg-infra" -backend-config="storage_account_name=infrastoragetfstate" -backend-config="container_name=statefile" -backend-config="key=infra/dev/terraform.tfstate"
+  displayName: "Terraform Init"
+
+# 🔹 Terraform Fmt
+- script: terraform fmt
+  displayName: "Terraform Fmt"
+
+# 🔹 Terraform Plan
+- script: terraform plan
   displayName: "Terraform Plan"
 
-  jobs:
-  - job: PlanJob
-    pool:
-      name: basic   # self-hosted agent
-
-    steps:
-    - checkout: self
-
-    # 🔹 Azure Login
-    - task: AzureCLI@2
-      inputs:
-        azureSubscription: 'basic-appreg'
-        scriptType: ps
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account show
-
-    # 🔹 Terraform Init
-    - script: |
-        terraform init `
-        -backend-config="resource_group_name=rg-infra" `
-        -backend-config="storage_account_name=infrastoragetfstate" `
-        -backend-config="container_name=statefile" `
-        -backend-config="key=infra/dev/terraform.tfstate"
-      displayName: "Terraform Init"
-
-    # 🔹 Terraform Format
-    - script: terraform fmt -check
-      displayName: "Terraform Fmt Check"
-
-    # 🔹 Terraform Plan
-    - script: terraform plan -out=tfplan
-      displayName: "Terraform Plan"
-
-    # 🔹 Publish Plan
-    - publish: tfplan
-      artifact: tfplan
-
-
-# -----------------------------
-# STAGE 2: APPROVAL
-# -----------------------------
-- stage: Approval
-  displayName: "Manual Approval"
-  dependsOn: Plan
-
-  jobs:
-  - job: WaitForApproval
-    pool: server
-
-    steps:
-    - task: ManualValidation@0
-      inputs:
-        notifyUsers: 'abhishekaggarwal.devops@gmail.com'
-        instructions: 'Approve Terraform Apply'
-        onTimeout: 'reject'
-
-
-# -----------------------------
-# STAGE 3: APPLY
-# -----------------------------
-- stage: Apply
+# 🔹 Terraform Apply
+- script: terraform apply -auto-approve
   displayName: "Terraform Apply"
-  dependsOn: Approval
-
-  jobs:
-  - job: ApplyJob
-    pool:
-      name: basic
-
-    steps:
-    - checkout: self
-
-    # 🔹 Azure Login
-    - task: AzureCLI@2
-      inputs:
-        azureSubscription: 'basic-appreg'
-        scriptType: ps
-        scriptLocation: inlineScript
-        inlineScript: |
-          az account show
-
-    # 🔹 Terraform Init
-    - script: |
-        terraform init `
-        -backend-config="resource_group_name=rg-infra" `
-        -backend-config="storage_account_name=infrastoragetfstate" `
-        -backend-config="container_name=statefile" `
-        -backend-config="key=infra/dev/terraform.tfstate"
-      displayName: "Terraform Init"
-
-    # 🔹 Download Plan
-    - download: current
-      artifact: tfplan
-
-    # 🔹 Terraform Apply
-    - script: terraform apply -auto-approve "$(Pipeline.Workspace)\tfplan\tfplan"
-      displayName: "Terraform Apply"
