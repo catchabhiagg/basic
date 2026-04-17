@@ -5,6 +5,7 @@ terraform {
       version = "4.68.0"
     }
   }
+
   backend "azurerm" {
     resource_group_name  = "rg-infra"
     storage_account_name = "infrastoragetfstate"
@@ -14,16 +15,14 @@ terraform {
 }
 
 provider "azurerm" {
-  features {
-  }
+  features {}
   subscription_id = "641d5a30-dc2d-40a0-8b76-034b34888a21"
-
 }
 
 # Resource Group
 resource "azurerm_resource_group" "rg" {
-  name     = var.rg_name
-  location = var.location
+  name     = "rg-devops-demo"
+  location = "southafricanorth"   # ✅ SAME REGION
 }
 
 # Virtual Network
@@ -65,19 +64,19 @@ resource "azurerm_network_interface" "nic" {
   }
 }
 
-# Virtual Machine
+# VM (UNCHANGED AS YOU WANTED)
 resource "azurerm_linux_virtual_machine" "vm" {
   name                = "my-vm"
   resource_group_name = azurerm_resource_group.rg.name
-   location            = "southafricanorth"
-   size                = "Standard_D2ls_v5"
+  location            = "southafricanorth"   # 🔒 SAME AS REQUIRED
+  size                = "Standard_D2ls_v5"   # 🔒 SAME AS REQUIRED
   admin_username      = "azureuser"
 
   network_interface_ids = [
     azurerm_network_interface.nic.id
   ]
 
-  admin_password = "Password@1234" # (Use Key Vault in real life)
+  admin_password = "Password@1234"
 
   os_disk {
     caching              = "ReadWrite"
