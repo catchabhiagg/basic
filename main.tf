@@ -28,7 +28,7 @@ resource "azurerm_resource_group" "rg" {
 
 # Virtual Network
 resource "azurerm_virtual_network" "vnet" {
-  name                = "my-vnet-main"
+  name                = "my-vnet-dev"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
@@ -47,7 +47,8 @@ resource "azurerm_public_ip" "pip" {
   name                = "my-public-ip"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
 }
 
 # NIC
