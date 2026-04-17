@@ -17,20 +17,35 @@ stages:
     steps:
     - checkout: self
 
-    # 🔹 Install Tools (Windows)
+    # 🔹 Install Tools (SAFE VERSION)
     - powershell: |
-        choco install terraform -y
-        choco install python -y
+        Write-Host "Installing tools..."
+
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        # Install Chocolatey if not present
+        if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+        }
+
+        choco install terraform -y --no-progress
+        choco install python -y --no-progress
+        choco install tflint -y --no-progress
+
+        refreshenv
+
+        python -m pip install --upgrade pip
         pip install checkov
-        choco install tflint -y
-        choco install wget -y
 
         # tfsec
-        Invoke-WebRequest -Uri "https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-windows-amd64.exe" -OutFile "C:\Windows\System32\tfsec.exe"
+        Invoke-WebRequest -Uri "https://github.com/aquasecurity/tfsec/releases/latest/download/tfsec-windows-amd64.exe" -OutFile "$env:SystemRoot\System32\tfsec.exe"
 
-        # Trufflehog
+        # trufflehog
         Invoke-WebRequest https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_windows_amd64.exe -OutFile trufflehog.exe
-        Move-Item trufflehog.exe C:\Windows\System32\trufflehog.exe
+        Move-Item trufflehog.exe "$env:SystemRoot\System32\trufflehog.exe"
+
+        Write-Host "Tools installed successfully"
       displayName: "Install Tools"
 
     # 🔹 Azure Login
@@ -70,7 +85,7 @@ stages:
     - script: terraform plan -out=tfplan
       displayName: "Terraform Plan"
 
-    # 🔹 Publish Plan
+    # 🔹 Publish artifact
     - publish: tfplan
       artifact: tfplan
 
@@ -127,7 +142,7 @@ stages:
         -backend-config="key=infra/dev/terraform.tfstate"
       displayName: "Terraform Init"
 
-    # 🔹 Download Plan
+    # 🔹 Download plan
     - download: current
       artifact: tfplan
 
